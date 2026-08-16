@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "cswap-chrome (claude.ai session follower)",
+  "version": "0.1.0",
+  "description": "Keeps Chrome's claude.ai session on whichever Claude account the cswap CLI is currently switched to.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAw0s7cYXxboINWumdNQBDDV4LKOAM8NoyxCs5hp0K0mEpDY/1+vMkDb0TFp5jX3SUm3Lc+HfsOsg6tDHimwoCrRwdKQx0EIjq8TF1RfVZJ2FZzhqS47iC1uSibOFUPMato5F7JI2do+5dF97BNKuHEZBiSPTEWGQ61c3wxPhvXcl2HfWD0CEni+lpCXbjp3ESStU/Qgy/XkW7oNYgZ56cw9ZtYJA21LaatUupmoH5w+HoS3q50wt6qcFw8mwff++Opj1c8bEv/6x+gtljk5WoEl8U8/OXdNg3kmOo8kl2rNLNtn1j/03sfESDpYEgmwFriUP2mzhfKP0m8xd/dfpqAwIDAQAB",
+  "permissions": ["cookies", "storage", "tabs", "alarms", "nativeMessaging", "notifications"],
+  "host_permissions": ["https://claude.ai/*", "https://*.claude.ai/*"],
+  "background": { "service_worker": "background.js" },
+  "icons": { "128": "icon-128.png" }
+}
