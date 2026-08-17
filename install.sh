@@ -1,62 +1,57 @@
 #!/usr/bin/env bash
-# Registers the cswap-chrome native messaging host with Chrome (macOS) and
-# prints the steps to load the unpacked extension. Idempotent.
+# Installs cswap-chrome-watch as a launchd LaunchAgent: when the cswap CLI
+# account changes, it opens the account-switch page in Chrome + notifies.
+# Idempotent. Optional arg: the URL to open (default: Google account chooser).
 set -euo pipefail
 
 DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-HOST_SCRIPT="$DIR/host/run-host.sh"
-EXT_ID="jeffcdjdecgpjacfknolgnhkgnanlhdc"
-HOST_NAME="com.cswap.chrome_host"
+SCRIPT="$DIR/bin/cswap-chrome-watch.py"
+URL="${1:-https://accounts.google.com/}"
+LABEL="com.cswap.chrome-watch"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+LOG="$HOME/Library/Logs/cswap-chrome-watch.log"
+PYTHON="$(command -v python3 || echo /usr/bin/python3)"
 
-chmod +x "$HOST_SCRIPT" "$DIR/host/cswap_chrome_host.py"
+chmod +x "$SCRIPT"
 
-# Register for Chrome (and Chromium / Chrome Beta / Dev if present).
-targets=(
-  "$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
-  "$HOME/Library/Application Support/Google/Chrome Beta/NativeMessagingHosts"
-  "$HOME/Library/Application Support/Google/Chrome Dev/NativeMessagingHosts"
-  "$HOME/Library/Application Support/Chromium/NativeMessagingHosts"
-)
-
-manifest_json() {
-  cat <<EOF
-{
-  "name": "$HOST_NAME",
-  "description": "cswap-chrome native host (claude.ai session follower)",
-  "path": "$HOST_SCRIPT",
-  "type": "stdio",
-  "allowed_origins": [ "chrome-extension://$EXT_ID/" ]
-}
-EOF
-}
-
-registered=0
-for base in "${targets[@]}"; do
-  parent=$(dirname "$base")
-  if [ -d "$parent" ]; then
-    mkdir -p "$base"
-    manifest_json > "$base/$HOST_NAME.json"
-    echo "Registered native host: $base/$HOST_NAME.json"
-    registered=1
-  fi
+# Clean up any leftover native-messaging hosts from the old extension-era design.
+for d in "$HOME/Library/Application Support/Google/Chrome" \
+         "$HOME/Library/Application Support/Google/Chrome Beta" \
+         "$HOME/Library/Application Support/Google/Chrome Dev" \
+         "$HOME/Library/Application Support/Chromium"; do
+  rm -f "$d/NativeMessagingHosts/com.cswap.chrome_host.json"
 done
 
-if [ "$registered" -eq 0 ]; then
-  echo "No Chrome/Chromium profile dir found. Is Chrome installed for this user?" >&2
-fi
+# Seed the last-seen account to the current one so loading the agent doesn't
+# fire a prompt immediately (and reboots stay quiet) — it only reacts to changes.
+STATE_DIR="$HOME/Library/Application Support/cswap-chrome"
+mkdir -p "$STATE_DIR"
+"$PYTHON" - "$STATE_DIR/last-account" <<'PY'
+import json, os, sys
+p = os.path.expanduser("~/.claude.json")
+try:
+    e = json.load(open(p)).get("oauthAccount", {}).get("emailAddress") or ""
+except Exception:
+    e = ""
+open(sys.argv[1], "w").write(e)
+PY
 
-cat <<EOF
+mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+sed -e "s|__PYTHON__|$PYTHON|g" \
+    -e "s|__SCRIPT__|$SCRIPT|g" \
+    -e "s|__URL__|$URL|g" \
+    -e "s|__LOG__|$LOG|g" \
+    "$DIR/com.cswap.chrome-watch.plist.template" > "$PLIST"
 
-Next steps:
-  1. Open chrome://extensions
-  2. Enable "Developer mode" (top-right toggle)
-  3. Click "Load unpacked" and select:
-       $DIR/extension
-  4. Confirm the extension ID shows as:
-       $EXT_ID
-  5. If the extension was already loaded, click its reload icon so it picks up
-     the freshly registered native host.
+# Reload the agent.
+launchctl unload "$PLIST" 2>/dev/null || true
+launchctl load -w "$PLIST"
 
-Then: log into claude.ai in Chrome once per account (with cswap switched to that
-account) to teach it. After that, switching cswap moves the browser too.
-EOF
+echo "Installed LaunchAgent: $PLIST"
+echo "  opens on account change: $URL"
+echo "  log: $LOG"
+echo
+echo "To change the URL later: ./install.sh 'https://your/page' (re-run)."
+echo
+echo "One-time cleanup of the old design (only if you loaded it before):"
+echo "  Remove the unpacked 'cswap-chrome' extension at chrome://extensions."
